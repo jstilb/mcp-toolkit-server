@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "toolkit": {
+      "command": "node",
+      "args": ["dist/index.js"],
+      "env": {
+        "MCP_MODE": "mock"
+      }
+    }
+  }
+}
