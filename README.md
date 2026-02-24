@@ -151,3 +151,10 @@ make type-check        # TypeScript strict check
 ## License
 
 MIT License - see [LICENSE](LICENSE) for details.
+
+
+## Related Projects
+
+- [ai-assistant](https://github.com/jstilb/ai-assistant) — Autonomous AI assistant powered by Claude Code
+- [context-engineering-toolkit](https://github.com/jstilb/context-engineering-toolkit) — Context window optimization tools
+- [agent-orchestrator](https://github.com/jstilb/agent-orchestrator) — Multi-agent orchestration with LangGraph
