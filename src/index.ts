@@ -1,7 +1,10 @@
+#!/usr/bin/env node
 /**
  * MCP Toolkit Server - entry point.
  *
  * Starts the MCP server using stdio transport.
+ * Published as @jstilb/mcp-toolkit-server on npm.
+ * Usage: npx @jstilb/mcp-toolkit-server
  */
 
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
