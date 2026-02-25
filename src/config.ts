@@ -15,6 +15,8 @@ export interface ServerConfig {
   version: string;
   openaiApiKey?: string;
   weatherApiKey?: string;
+  braveApiKey?: string;
+  openWeatherMapApiKey?: string;
   maxConcurrentTools: number;
   toolTimeoutMs: number;
 }
@@ -28,6 +30,8 @@ export function loadConfig(overrides?: Partial<ServerConfig>): ServerConfig {
     version: env["MCP_SERVER_VERSION"] ?? "0.1.0",
     openaiApiKey: env["OPENAI_API_KEY"],
     weatherApiKey: env["WEATHER_API_KEY"],
+    braveApiKey: env["BRAVE_API_KEY"],
+    openWeatherMapApiKey: env["OPENWEATHERMAP_API_KEY"],
     maxConcurrentTools: parseInt(env["MCP_MAX_CONCURRENT"] ?? "5", 10),
     toolTimeoutMs: parseInt(env["MCP_TOOL_TIMEOUT_MS"] ?? "30000", 10),
     ...overrides,

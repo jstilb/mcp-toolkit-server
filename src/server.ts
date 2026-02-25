@@ -3,6 +3,13 @@
  *
  * Registers all tools, resources, and prompts with the
  * Model Context Protocol SDK. Supports mock mode for demos.
+ *
+ * 2025 MCP spec features:
+ * - sampling capability (smart_summarize sends sampling/createMessage to client)
+ * - elicitation capability (configure_analysis uses elicitation/create)
+ * - tool annotations (readOnlyHint, idempotentHint, destructiveHint, openWorldHint)
+ * - outputSchema on text analysis tools
+ * - prompts capability
  */
 
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
@@ -28,6 +35,14 @@ import {
 import { webSearch, SearchSchema } from "./tools/web-search.js";
 import { getWeather, WeatherSchema } from "./tools/weather.js";
 import {
+  smartSummarize,
+  SmartSummarizeSchema,
+} from "./tools/sampling.js";
+import {
+  configureAnalysis,
+  ConfigureAnalysisSchema,
+} from "./tools/elicitation.js";
+import {
   getResourceDefinitions,
   readResource,
 } from "./resources/index.js";
@@ -35,6 +50,67 @@ import {
   getPromptDefinitions,
   generatePromptMessages,
 } from "./prompts/index.js";
+
+// --- Tool Annotations (2025 MCP spec) ---
+
+interface ToolAnnotations {
+  readOnlyHint: boolean;
+  idempotentHint: boolean;
+  destructiveHint: boolean;
+  openWorldHint: boolean;
+}
+
+// --- OutputSchema for text analysis tools ---
+
+const SENTIMENT_OUTPUT_SCHEMA = {
+  type: "object" as const,
+  properties: {
+    sentiment: {
+      type: "string",
+      enum: ["positive", "negative", "neutral", "mixed"],
+      description: "Overall sentiment classification",
+    },
+    confidence: {
+      type: "number",
+      description: "Confidence score between 0 and 1",
+    },
+    explanation: {
+      type: "string",
+      description: "Human-readable explanation of the sentiment",
+    },
+  },
+  required: ["sentiment", "confidence", "explanation"],
+};
+
+const ENTITIES_OUTPUT_SCHEMA = {
+  type: "object" as const,
+  properties: {
+    entities: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          text: { type: "string", description: "The entity text" },
+          type: { type: "string", description: "Entity type (person, organization, etc.)" },
+          confidence: { type: "number", description: "Confidence score" },
+        },
+        required: ["text", "type", "confidence"],
+      },
+    },
+  },
+  required: ["entities"],
+};
+
+const SUMMARIZE_OUTPUT_SCHEMA = {
+  type: "object" as const,
+  properties: {
+    summary: {
+      type: "string",
+      description: "The condensed summary of the input text",
+    },
+  },
+  required: ["summary"],
+};
 
 export function createServer(config: ServerConfig): Server {
   const server = new Server(
@@ -44,6 +120,11 @@ export function createServer(config: ServerConfig): Server {
         tools: {},
         resources: {},
         prompts: {},
+        // sampling declared via experimental per SDK 1.12 type constraints.
+        // Signals that this server issues sampling/createMessage requests to clients.
+        experimental: {
+          sampling: {},
+        },
       },
     }
   );
@@ -58,7 +139,7 @@ export function createServer(config: ServerConfig): Server {
 }
 
 function registerTools(server: Server, providers: Providers): void {
-  // List available tools
+  // List available tools with 2025-spec annotations and outputSchema
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
     tools: [
       {
@@ -77,6 +158,13 @@ function registerTools(server: Server, providers: Providers): void {
           },
           required: ["text"],
         },
+        outputSchema: SUMMARIZE_OUTPUT_SCHEMA,
+        annotations: {
+          readOnlyHint: true,
+          idempotentHint: true,
+          destructiveHint: false,
+          openWorldHint: false,
+        } satisfies ToolAnnotations,
       },
       {
         name: "analyze_sentiment",
@@ -92,6 +180,13 @@ function registerTools(server: Server, providers: Providers): void {
           },
           required: ["text"],
         },
+        outputSchema: SENTIMENT_OUTPUT_SCHEMA,
+        annotations: {
+          readOnlyHint: true,
+          idempotentHint: true,
+          destructiveHint: false,
+          openWorldHint: false,
+        } satisfies ToolAnnotations,
       },
       {
         name: "extract_entities",
@@ -122,11 +217,18 @@ function registerTools(server: Server, providers: Providers): void {
           },
           required: ["text"],
         },
+        outputSchema: ENTITIES_OUTPUT_SCHEMA,
+        annotations: {
+          readOnlyHint: true,
+          idempotentHint: true,
+          destructiveHint: false,
+          openWorldHint: false,
+        } satisfies ToolAnnotations,
       },
       {
-        name: "web_search",
+        name: "brave_web_search",
         description:
-          "Search the web for information. Returns relevant results with titles, URLs, and snippets.",
+          "Search the web for information using Brave Search. Returns relevant results with titles, URLs, and snippets. Uses real Brave API in production mode.",
         inputSchema: {
           type: "object" as const,
           properties: {
@@ -139,11 +241,17 @@ function registerTools(server: Server, providers: Providers): void {
           },
           required: ["query"],
         },
+        annotations: {
+          readOnlyHint: true,
+          idempotentHint: false,
+          destructiveHint: false,
+          openWorldHint: true,
+        } satisfies ToolAnnotations,
       },
       {
         name: "get_weather",
         description:
-          "Get current weather conditions and forecast for a location.",
+          "Get current weather conditions and forecast for a location. Uses OpenWeatherMap API in production mode.",
         inputSchema: {
           type: "object" as const,
           properties: {
@@ -160,6 +268,59 @@ function registerTools(server: Server, providers: Providers): void {
           },
           required: ["location"],
         },
+        annotations: {
+          readOnlyHint: true,
+          idempotentHint: false,
+          destructiveHint: false,
+          openWorldHint: true,
+        } satisfies ToolAnnotations,
+      },
+      {
+        name: "smart_summarize",
+        description:
+          "Summarize text by sending a sampling/createMessage request to the connected MCP client (Claude). The client's LLM generates the actual summary — demonstrating bidirectional MCP communication.",
+        inputSchema: {
+          type: "object" as const,
+          properties: {
+            text: {
+              type: "string",
+              description: "Text to summarize using the client's LLM",
+            },
+            maxLength: {
+              type: "number",
+              description: "Approximate maximum summary length in words",
+              default: 150,
+            },
+          },
+          required: ["text"],
+        },
+        annotations: {
+          readOnlyHint: true,
+          idempotentHint: false,
+          destructiveHint: false,
+          openWorldHint: false,
+        } satisfies ToolAnnotations,
+      },
+      {
+        name: "configure_analysis",
+        description:
+          "Configure analysis options via elicitation/create. Asks the user structured follow-up questions about analysis depth, and handles accept, decline, and cancel responses gracefully.",
+        inputSchema: {
+          type: "object" as const,
+          properties: {
+            text: {
+              type: "string",
+              description: "Text to analyze — triggers configuration dialog",
+            },
+          },
+          required: ["text"],
+        },
+        annotations: {
+          readOnlyHint: false,
+          idempotentHint: false,
+          destructiveHint: false,
+          openWorldHint: false,
+        } satisfies ToolAnnotations,
       },
     ],
   }));
@@ -175,7 +336,11 @@ function registerTools(server: Server, providers: Providers): void {
         if (!result.ok) {
           return { content: [{ type: "text", text: `Error: ${result.error}` }], isError: true };
         }
-        return { content: [{ type: "text", text: result.value }] };
+        // outputSchema requires structuredContent to be returned alongside content
+        return {
+          content: [{ type: "text", text: result.value }],
+          structuredContent: { summary: result.value },
+        };
       }
 
       case "analyze_sentiment": {
@@ -184,8 +349,10 @@ function registerTools(server: Server, providers: Providers): void {
         if (!result.ok) {
           return { content: [{ type: "text", text: `Error: ${result.error}` }], isError: true };
         }
+        // outputSchema requires structuredContent to be returned alongside content
         return {
           content: [{ type: "text", text: JSON.stringify(result.value, null, 2) }],
+          structuredContent: result.value,
         };
       }
 
@@ -195,12 +362,14 @@ function registerTools(server: Server, providers: Providers): void {
         if (!result.ok) {
           return { content: [{ type: "text", text: `Error: ${result.error}` }], isError: true };
         }
+        // outputSchema requires structuredContent to be returned alongside content
         return {
           content: [{ type: "text", text: JSON.stringify(result.value, null, 2) }],
+          structuredContent: { entities: result.value },
         };
       }
 
-      case "web_search": {
+      case "brave_web_search": {
         const input = SearchSchema.parse(args);
         const result = await webSearch(input, providers.search);
         if (!result.ok) {
@@ -214,6 +383,26 @@ function registerTools(server: Server, providers: Providers): void {
       case "get_weather": {
         const input = WeatherSchema.parse(args);
         const result = await getWeather(input, providers.weather);
+        if (!result.ok) {
+          return { content: [{ type: "text", text: `Error: ${result.error}` }], isError: true };
+        }
+        return {
+          content: [{ type: "text", text: JSON.stringify(result.value, null, 2) }],
+        };
+      }
+
+      case "smart_summarize": {
+        const input = SmartSummarizeSchema.parse(args);
+        const result = await smartSummarize(input, server);
+        if (!result.ok) {
+          return { content: [{ type: "text", text: `Error: ${result.error}` }], isError: true };
+        }
+        return { content: [{ type: "text", text: result.value }] };
+      }
+
+      case "configure_analysis": {
+        const input = ConfigureAnalysisSchema.parse(args);
+        const result = await configureAnalysis(input, server);
         if (!result.ok) {
           return { content: [{ type: "text", text: `Error: ${result.error}` }], isError: true };
         }
