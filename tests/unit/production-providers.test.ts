@@ -7,6 +7,7 @@
  * These tests mock the global fetch to avoid live API calls.
  */
 
+import { jest } from "@jest/globals";
 import { BraveWebSearchProvider, OpenWeatherMapProvider } from "../../src/providers/production.js";
 import { createProviders } from "../../src/providers/index.js";
 import { loadConfig } from "../../src/config.js";
@@ -20,15 +21,19 @@ afterEach(() => {
 });
 
 function mockFetchSuccess(body: unknown, status = 200): void {
-  global.fetch = jest.fn().mockResolvedValue({
+  const fn = jest.fn() as jest.MockedFunction<() => Promise<Response>>;
+  fn.mockResolvedValue({
     ok: status >= 200 && status < 300,
     status,
     json: async () => body,
   } as Response);
+  global.fetch = fn as unknown as typeof global.fetch;
 }
 
 function mockFetchError(message: string): void {
-  global.fetch = jest.fn().mockRejectedValue(new Error(message));
+  const fn = jest.fn() as jest.MockedFunction<() => Promise<Response>>;
+  fn.mockRejectedValue(new Error(message));
+  global.fetch = fn as unknown as typeof global.fetch;
 }
 
 // --- BraveWebSearchProvider ---
@@ -61,7 +66,8 @@ describe("BraveWebSearchProvider (ISC 4 — production Brave Search)", () => {
     expect(callUrl).toContain("api.search.brave.com");
     expect(callUrl).toContain("q=AI+safety");
 
-    const headers = fetchMock.mock.calls[0]![1]?.headers as Record<string, string>;
+    const callInit = fetchMock.mock.calls[0]![1] as RequestInit | undefined;
+    const headers = callInit?.headers as Record<string, string>;
     expect(headers?.["X-Subscription-Token"]).toBe("test-key");
   });
 

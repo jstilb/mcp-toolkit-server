@@ -5,19 +5,20 @@
  * handles accept/decline/cancel response actions gracefully.
  */
 
+import { jest } from "@jest/globals";
 import { configureAnalysis } from "../../src/tools/elicitation.js";
 import type { Server } from "@modelcontextprotocol/sdk/server/index.js";
 
 function makeMockServer(elicitResult: unknown): Server {
-  return {
-    elicitInput: jest.fn().mockResolvedValue(elicitResult),
-  } as unknown as Server;
+  const fn = jest.fn() as jest.MockedFunction<() => Promise<unknown>>;
+  fn.mockResolvedValue(elicitResult);
+  return { elicitInput: fn } as unknown as Server;
 }
 
 function makeMockServerThrows(error: Error): Server {
-  return {
-    elicitInput: jest.fn().mockRejectedValue(error),
-  } as unknown as Server;
+  const fn = jest.fn() as jest.MockedFunction<() => Promise<unknown>>;
+  fn.mockRejectedValue(error);
+  return { elicitInput: fn } as unknown as Server;
 }
 
 describe("configureAnalysis (ISC 3 — elicitation/create)", () => {

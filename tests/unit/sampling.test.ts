@@ -4,13 +4,14 @@
  * ISC 2 (3708): smart_summarize sends sampling/createMessage to client.
  */
 
+import { jest } from "@jest/globals";
 import { smartSummarize } from "../../src/tools/sampling.js";
 import type { Server } from "@modelcontextprotocol/sdk/server/index.js";
 
 function makeMockServer(response: unknown): Server {
-  return {
-    createMessage: jest.fn().mockResolvedValue(response),
-  } as unknown as Server;
+  const fn = jest.fn() as jest.MockedFunction<() => Promise<unknown>>;
+  fn.mockResolvedValue(response);
+  return { createMessage: fn } as unknown as Server;
 }
 
 describe("smartSummarize (ISC 2 — sampling/createMessage)", () => {
@@ -43,9 +44,9 @@ describe("smartSummarize (ISC 2 — sampling/createMessage)", () => {
   });
 
   it("returns error when sampling fails", async () => {
-    const server = {
-      createMessage: jest.fn().mockRejectedValue(new Error("Client does not support sampling")),
-    } as unknown as Server;
+    const failFn = jest.fn() as jest.MockedFunction<() => Promise<unknown>>;
+    failFn.mockRejectedValue(new Error("Client does not support sampling"));
+    const server = { createMessage: failFn } as unknown as Server;
 
     const result = await smartSummarize(
       { text: "Some text.", maxLength: 50 },
